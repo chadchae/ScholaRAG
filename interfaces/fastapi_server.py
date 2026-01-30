@@ -12,19 +12,74 @@ Endpoints:
     GET /stats       - Get statistics
     GET /health      - Health check
 
+Security (v1.2.6):
+    - API key authentication via X-API-Key header
+    - Configurable CORS origins via ALLOWED_ORIGINS env var
+    - Localhost binding by default (use 0.0.0.0 only if explicitly needed)
+
 Author: ScholaRAG Team
 License: MIT
 """
 
 import os
+import secrets
 from typing import List, Optional
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Security
+from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import chromadb
 from anthropic import Anthropic
+
+
+# =============================================================================
+# SECURITY CONFIGURATION (v1.2.6)
+# =============================================================================
+
+# API Key Authentication
+API_KEY_NAME = "X-API-Key"
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+
+# Generate a default API key if not set (for development only)
+# In production, ALWAYS set SCHOLARAG_API_KEY environment variable
+DEFAULT_DEV_KEY = "dev-key-change-in-production"
+API_KEY = os.getenv("SCHOLARAG_API_KEY", DEFAULT_DEV_KEY)
+
+# CORS Configuration
+# Default: localhost only. Set ALLOWED_ORIGINS for production
+ALLOWED_ORIGINS = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000"
+).split(",")
+
+
+async def verify_api_key(api_key: str = Security(api_key_header)) -> str:
+    """
+    Verify API key from X-API-Key header.
+
+    Security note: In production, always use a strong, randomly generated API key.
+    """
+    if API_KEY == DEFAULT_DEV_KEY:
+        # Development mode: warn but allow
+        print("⚠️  WARNING: Using default dev API key. Set SCHOLARAG_API_KEY in production!")
+        return "dev"
+
+    if api_key is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing API key. Add X-API-Key header.",
+            headers={"WWW-Authenticate": "ApiKey"}
+        )
+
+    if not secrets.compare_digest(api_key, API_KEY):
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid API key"
+        )
+
+    return api_key
 
 
 # Models
@@ -51,16 +106,16 @@ class StatsResponse(BaseModel):
 app = FastAPI(
     title="ScholaRAG API",
     description="REST API for querying your research papers",
-    version="1.1.4"
+    version="1.2.6"  # Updated with security fixes
 )
 
-# CORS middleware (allow frontend from any origin)
+# CORS middleware (v1.2.6: Configurable, no longer allow all origins)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict in production
+    allow_origins=ALLOWED_ORIGINS,  # Configurable via ALLOWED_ORIGINS env var
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],  # Only methods we actually use
+    allow_headers=["X-API-Key", "Content-Type"],  # Only headers we need
 )
 
 
@@ -135,8 +190,11 @@ async def get_stats():
 
 
 @app.post("/query", response_model=QueryResponse)
-async def query_papers(request: QueryRequest):
-    """Query papers and generate answer"""
+async def query_papers(
+    request: QueryRequest,
+    api_key: str = Depends(verify_api_key)  # v1.2.6: Require API key
+):
+    """Query papers and generate answer (requires API key)"""
 
     if not vector_db or not anthropic_client:
         raise HTTPException(status_code=500, detail="Services not initialized")
@@ -218,8 +276,12 @@ Provide a clear answer with [Paper_ID] citations for every claim."""
 
 
 @app.get("/papers")
-async def list_papers(limit: int = 10, offset: int = 0):
-    """List papers in knowledge base"""
+async def list_papers(
+    limit: int = 10,
+    offset: int = 0,
+    api_key: str = Depends(verify_api_key)  # v1.2.6: Require API key
+):
+    """List papers in knowledge base (requires API key)"""
 
     if not vector_db:
         raise HTTPException(status_code=500, detail="Vector DB not initialized")
@@ -255,4 +317,20 @@ async def list_papers(limit: int = 10, offset: int = 0):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    # v1.2.6 Security: Bind to localhost by default
+    # Set HOST=0.0.0.0 only if you need external access (not recommended)
+    host = os.getenv("HOST", "127.0.0.1")
+    port = int(os.getenv("PORT", "8000"))
+
+    if host == "0.0.0.0":
+        print("⚠️  WARNING: Binding to 0.0.0.0 exposes the server externally!")
+        print("   Make sure SCHOLARAG_API_KEY is set to a strong value.")
+
+    if API_KEY == DEFAULT_DEV_KEY:
+        print("\n" + "="*60)
+        print("🔐 SECURITY: Using development API key")
+        print("   Set SCHOLARAG_API_KEY for production use")
+        print("="*60 + "\n")
+
+    uvicorn.run(app, host=host, port=port)

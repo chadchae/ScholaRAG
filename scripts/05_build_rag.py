@@ -56,10 +56,24 @@ class RAGBuilder:
         self.output_dir = self.project_path / "data" / "04_rag"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # RAG settings
-        self.chunk_size = 1000
-        self.chunk_overlap = 200
+        # RAG settings (v1.2.6: TOKEN-based, not character-based)
+        # Documentation says "1000 tokens" but implementation used 1000 characters
+        # Fix: Use tiktoken for true token-based chunking
+        self.chunk_size_tokens = 500  # Actual tokens (not characters)
+        self.chunk_overlap_tokens = 100  # Actual tokens
+        self.chunk_size = 1000  # Fallback for character-based (legacy)
+        self.chunk_overlap = 200  # Fallback for character-based (legacy)
+        self.use_token_chunking = True  # v1.2.6: Enable token-based chunking
         self.embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
+
+        # Initialize tokenizer for token-based chunking
+        try:
+            import tiktoken
+            self.tokenizer = tiktoken.get_encoding("cl100k_base")
+        except ImportError:
+            print("   ⚠️  tiktoken not installed. Using character-based chunking.")
+            self.use_token_chunking = False
+            self.tokenizer = None
 
         # Load environment variables
         load_dotenv()

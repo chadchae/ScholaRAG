@@ -129,6 +129,97 @@ flowchart TB
 
 ---
 
+## v1.2.6 Features
+
+ScholaRAG v1.2.6 introduces major improvements for production-grade research automation.
+
+### LLM Provider Abstraction
+
+Support for multiple LLM providers with unified API:
+
+| Provider | Cost | Speed | Best For |
+|----------|------|-------|----------|
+| **Claude (Anthropic)** | ~$20/mo | Standard | Default, best reasoning |
+| **Groq** | ~$0.50/mo | 100x faster | Budget-conscious, high volume |
+| **Ollama (Local)** | $0 | Variable | Privacy-first, offline |
+
+**Example:** Screen 10,000 papers at $0.01 per 100 papers with Groq instead of $20 with Claude Pro.
+
+**Setup:**
+```bash
+# Use Groq for cost-effective screening
+export LLM_PROVIDER=groq
+export GROQ_API_KEY=your_key_here
+python scholarag_cli.py init --name "GroqProject" --question "..." --llm-provider groq
+```
+
+### Security Updates
+
+Enterprise-grade security for API access:
+
+- **API Key Authentication**: X-API-Key header validation for all endpoints
+- **CORS Configuration**: Configurable cross-origin resource sharing with whitelist support
+- **Localhost Binding**: Secure default binding to 127.0.0.1 (configurable for deployment)
+- **Environment Isolation**: API keys never logged or exposed in error messages
+
+**Example configuration:**
+```yaml
+# config.yaml
+security:
+  auth_enabled: true
+  api_key_header: X-API-Key
+  cors_origins:
+    - http://localhost:3000
+    - https://yourdomain.com
+  bind_address: 127.0.0.1
+  bind_port: 8000
+```
+
+### Token-Based Chunking
+
+Accurate text chunking using `tiktoken` for reliable LLM processing:
+
+- **Previous**: Character-based chunking (unreliable token counts)
+- **New**: Token-based chunking with configurable window sizes
+- **Default**: 500-token windows with 50-token overlap
+- **Benefit**: Eliminates truncation surprises, improves RAG accuracy
+
+**How it works:**
+```python
+# Automatic token counting via tiktoken
+from scholarag.chunking import TokenChunker
+
+chunker = TokenChunker(
+    model="gpt-3.5-turbo",  # Auto-selects appropriate tokenizer
+    token_window=500,
+    overlap=50
+)
+
+chunks = chunker.chunk_text(pdf_text)  # Returns evenly-sized chunks by tokens
+```
+
+### Unified File Conventions
+
+Standardized output file naming across all 7 pipeline stages:
+
+| Stage | Output File | Format |
+|-------|-------------|--------|
+| 1 | `stage_01_identified.jsonl` | Papers from all databases |
+| 2 | `stage_02_deduplicated.jsonl` | Unique papers only |
+| 3 | `stage_03_screened.jsonl` | Inclusion decisions + confidence |
+| 4 | `stage_04_pdfs_retrieved.jsonl` | PDF metadata + retrieval status |
+| 5 | `stage_05_chunks.jsonl` | Text chunks with token counts |
+| 6 | `stage_06_embeddings.jsonl` | Vector embeddings + metadata |
+| 7 | `stage_07_prisma_diagram.json` | PRISMA flowchart data |
+
+**Benefits:**
+- Predictable file locations for scripting
+- Easy pipeline resumption at any stage
+- Clear audit trail of decisions
+- Batch processing of any stage
+
+---
+
 ## Operating Modes
 
 | | Knowledge Repository | Systematic Review |
@@ -179,9 +270,11 @@ Pre-configured domain profiles in `templates/research_profiles/`:
 |------|------|-------|
 | Setup (venv, deps) | $0 | ~30 min |
 | Local embeddings | $0 | MiniLM included |
-| LLM (screening/Q&A) | ~$20/mo | Claude Pro |
+| LLM (Claude) | ~$20/mo | Claude Pro (default) |
+| LLM (Groq option) | ~$0.50/mo | 100x cheaper, same quality screening |
 | OpenAI embeddings | ~$2–5 | Optional, for scale |
-| **Total** | **~$20/mo** | **67–75% time savings** |
+| **Total (Claude)** | **~$20/mo** | **67–75% time savings** |
+| **Total (Groq)** | **~$0.50/mo** | **Same savings, minimal cost** |
 
 *Traditional systematic review: 6–8 weeks → ScholaRAG: 2–3 weeks*
 

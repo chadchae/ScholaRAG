@@ -593,18 +593,33 @@ Abstract: {abstract}"""
         print("="*60)
 
         # Save by decision type (3-Zone Model)
+        # v1.2.6: Save BOTH legacy names AND standard names for pipeline compatibility
 
         # Zone 2: Auto-include (high confidence)
         df_auto_include = df[df['decision'] == 'auto-include'].copy()
+
+        # PRIMARY: relevant_papers.csv (used by Stage 4 download, Stage 7 PRISMA)
+        relevant_file = self.output_dir / "relevant_papers.csv"
+        df_auto_include.to_csv(relevant_file, index=False)
+        print(f"\n💾 Relevant papers (for Stage 4/7): {relevant_file}")
+
+        # LEGACY: auto_included.csv (backward compatibility)
         auto_include_file = self.output_dir / "auto_included.csv"
         df_auto_include.to_csv(auto_include_file, index=False)
-        print(f"\n💾 Auto-included papers: {auto_include_file}")
+        print(f"💾 Auto-included papers (legacy): {auto_include_file}")
 
         # Zone 2: Auto-exclude (high confidence)
         df_auto_exclude = df[df['decision'] == 'auto-exclude'].copy()
+
+        # PRIMARY: excluded_papers.csv (used by Stage 7 PRISMA)
+        excluded_file = self.output_dir / "excluded_papers.csv"
+        df_auto_exclude.to_csv(excluded_file, index=False)
+        print(f"💾 Excluded papers (for Stage 7): {excluded_file}")
+
+        # LEGACY: auto_excluded.csv (backward compatibility)
         auto_exclude_file = self.output_dir / "auto_excluded.csv"
         df_auto_exclude.to_csv(auto_exclude_file, index=False)
-        print(f"💾 Auto-excluded papers: {auto_exclude_file}")
+        print(f"💾 Auto-excluded papers (legacy): {auto_exclude_file}")
 
         # Zone 3: Human review queue (medium confidence)
         df_human_review = df[df['decision'] == 'human-review'].copy()
